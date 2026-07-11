@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#76d9ef">
+  <title>כרטיסיית נהלולה</title>
+  <style>
+    :root{--bg:#76d9ef;--ink:#3b2d28;--ok:#159957;--danger:#b84b30}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:linear-gradient(#62cce6,#a8effa);color:var(--ink)}
+    .app{width:min(100%,520px);margin:auto;padding:18px 16px 34px}
+    .panel{background:rgba(255,255,255,.58);border:2px solid rgba(59,45,40,.18);border-radius:24px;box-shadow:0 12px 35px rgba(0,0,0,.12);padding:18px}
+    h1{text-align:center;font-size:38px;margin:0 0 2px}.sub{text-align:center;font-weight:700;margin:0 0 16px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0 18px}
+    .slot{height:74px;border:3px solid var(--ink);border-radius:12px;background:rgba(255,255,255,.38);display:flex;align-items:center;justify-content:center;position:relative;font-size:34px;font-weight:800}
+    .slot .n{position:absolute;top:6px;right:10px;font-size:18px;opacity:.7}.slot.done{background:#dcffe9}.slot.done:after{content:"✔";color:var(--ok);font-size:44px}
+    .slot.free{grid-column:1/span 2;height:84px;background:#fff3cc}.slot.free.ready{background:#d9ffe6;animation:pulse 1.5s infinite}.slot.free.ready:after{content:"קפה חינם! ☕";color:var(--ok);font-size:30px}
+    @keyframes pulse{50%{box-shadow:0 0 0 8px rgba(21,153,87,.12)}}
+    .status{text-align:center;font-size:20px;font-weight:800;min-height:28px;margin:8px 0 14px}
+    button{width:100%;min-height:52px;border:0;border-radius:14px;font-size:19px;font-weight:800;padding:10px 14px;margin:6px 0;background:var(--ink);color:#fff;-webkit-appearance:none;appearance:none}
+    button.secondary{background:#fff;color:var(--ink);border:2px solid var(--ink)}button.danger{background:var(--danger)}button:disabled{opacity:.42}
+    .seller{display:none;margin-top:14px;padding-top:14px;border-top:2px dashed rgba(59,45,40,.35)}.seller.show{display:block}
+    label{display:block;text-align:center;font-weight:800;margin-bottom:8px}
+    input{width:100%;min-height:52px;border:2px solid var(--ink);border-radius:12px;padding:10px 12px;font-size:22px;text-align:center;background:#fff}
+    .confirmBox{display:none;background:#fff4e5;border:2px solid var(--danger);border-radius:14px;padding:12px;margin-top:10px;text-align:center}.confirmBox.show{display:block}
+    .small,.footer{text-align:center;font-size:13px;opacity:.72;line-height:1.45}.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#222;color:#fff;padding:12px 18px;border-radius:999px;opacity:0;pointer-events:none;transition:.25s;z-index:5;white-space:nowrap}.toast.show{opacity:1}
+  </style>
+</head>
+<body>
+<main class="app"><section class="panel">
+  <h1>נהלולה</h1><p class="sub">כרטיסיית קפה דיגיטלית</p>
+  <div class="grid" id="grid"></div><div class="status" id="status"></div>
+  <button id="openSeller" class="secondary" type="button">מוכר: הוספת חתימה</button>
+
+  <div class="seller" id="seller">
+    <label for="sellerCode">קוד מוכר</label>
+    <input id="sellerCode" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="הקלד קוד">
+    <button id="addStamp" type="button">הוסף ✔️</button>
+    <button id="redeem" class="danger" type="button">ממש קפה חינם</button>
+
+    <div class="confirmBox" id="confirmBox">
+      <strong>לאפס את הכרטיסייה לאחר מסירת הקפה?</strong>
+      <button id="confirmRedeem" class="danger" type="button">כן, הקפה נמסר</button>
+      <button id="cancelRedeem" class="secondary" type="button">ביטול</button>
+    </div>
+
+    <button id="closeSeller" class="secondary" type="button">סגור</button>
+    <p class="small">קוד ברירת המחדל: 2468. הנתונים נשמרים רק במכשיר זה.</p>
+  </div>
+  <p class="footer">ללא חשבון, ללא שרת וללא אינטרנט.</p>
+</section></main>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+  'use strict';
+  var KEY='nahalula_card_v2', PIN='2468', MAX=9;
+  function el(id){return document.getElementById(id)}
+  function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+  function initial(){return{stamps:0,lastStampDate:'',freeReady:false,totalRedeemed:0}}
+  function load(){try{var x=JSON.parse(localStorage.getItem(KEY));return x&&Number.isInteger(x.stamps)?x:initial()}catch(e){return initial()}}
+  var state=load();
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+  function toast(msg){el('toast').textContent=msg;el('toast').classList.add('show');setTimeout(function(){el('toast').classList.remove('show')},1800)}
+  function pinOK(){if(el('sellerCode').value.trim()!==PIN){toast('קוד מוכר שגוי');el('sellerCode').focus();return false}return true}
+  function render(){
+    var grid=el('grid');grid.innerHTML='';
+    for(var i=1;i<=MAX;i++){var s=document.createElement('div');s.className='slot'+(i<=state.stamps?' done':'');s.innerHTML='<span class="n">'+i+'</span>';grid.appendChild(s)}
+    var f=document.createElement('div');f.className='slot free'+(state.freeReady?' ready':'');if(!state.freeReady)f.innerHTML='<span class="n">10</span><strong>חינם!</strong>';grid.appendChild(f);
+    el('status').textContent=state.freeReady?'הקפה הבא חינם 🎉':state.stamps+' מתוך '+MAX+' רכישות';el('redeem').disabled=!state.freeReady;
+  }
+  el('openSeller').addEventListener('click',function(){el('seller').classList.add('show');setTimeout(function(){el('sellerCode').focus()},50)});
+  el('closeSeller').addEventListener('click',function(){el('seller').classList.remove('show');el('confirmBox').classList.remove('show');el('sellerCode').value=''});
+  el('addStamp').addEventListener('click',function(){
+    if(!pinOK())return;if(state.freeReady){toast('כבר ממתין קפה חינם');return}if(state.lastStampDate===today()){toast('כבר נוספה חתימה היום');return}
+    state.stamps++;state.lastStampDate=today();if(state.stamps>=MAX)state.freeReady=true;save();render();toast('נוספה חתימה ✔️');
+  });
+  el('redeem').addEventListener('click',function(){if(!pinOK())return;if(!state.freeReady){toast('עדיין אין קפה חינם');return}el('confirmBox').classList.add('show')});
+  el('cancelRedeem').addEventListener('click',function(){el('confirmBox').classList.remove('show')});
+  el('confirmRedeem').addEventListener('click',function(){state={stamps:0,lastStampDate:'',freeReady:false,totalRedeemed:(state.totalRedeemed||0)+1};save();render();el('confirmBox').classList.remove('show');toast('הקפה מומש ☕')});
+  render();
+})();
+</script>
+</body></html>
